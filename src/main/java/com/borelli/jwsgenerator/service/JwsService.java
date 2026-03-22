@@ -1,20 +1,10 @@
 package com.borelli.jwsgenerator.service;
 
-import com.borelli.jwsgenerator.dto.*;
-import com.borelli.jwsgenerator.exception.JwsOperationException;
-import com.nimbusds.jose.*;
-import com.nimbusds.jose.crypto.*;
-import com.nimbusds.jose.jwk.Curve;
-import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.jwk.RSAKey;
-import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
-import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-
 import java.nio.charset.StandardCharsets;
-import java.security.*;
+import java.security.GeneralSecurityException;
+import java.security.KeyFactory;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPrivateKey;
@@ -24,6 +14,37 @@ import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 import java.util.Map;
 import java.util.UUID;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import com.borelli.jwsgenerator.dto.JwsRequest;
+import com.borelli.jwsgenerator.dto.JwsResponse;
+import com.borelli.jwsgenerator.dto.JwsVerifyRequest;
+import com.borelli.jwsgenerator.dto.JwsVerifyResponse;
+import com.borelli.jwsgenerator.dto.KeyGenerateRequest;
+import com.borelli.jwsgenerator.dto.KeyGenerateResponse;
+import com.borelli.jwsgenerator.exception.JwsOperationException;
+import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.JOSEObjectType;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.JWSObject;
+import com.nimbusds.jose.JWSSigner;
+import com.nimbusds.jose.JWSVerifier;
+import com.nimbusds.jose.Payload;
+import com.nimbusds.jose.crypto.ECDSASigner;
+import com.nimbusds.jose.crypto.ECDSAVerifier;
+import com.nimbusds.jose.crypto.MACSigner;
+import com.nimbusds.jose.crypto.MACVerifier;
+import com.nimbusds.jose.crypto.RSASSASigner;
+import com.nimbusds.jose.crypto.RSASSAVerifier;
+import com.nimbusds.jose.jwk.Curve;
+import com.nimbusds.jose.jwk.ECKey;
+import com.nimbusds.jose.jwk.RSAKey;
+import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
+import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 
 /**
  * Service responsible for JWS generation, verification, and key-pair generation.
@@ -247,7 +268,7 @@ public class JwsService {
             byte[] keyBytes = decodePem(pem);
             PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
             return KeyFactory.getInstance(algorithm).generatePrivate(spec);
-        } catch (Exception e) {
+        } catch (GeneralSecurityException | IllegalArgumentException e) {
             throw new JwsOperationException("Failed to parse " + algorithm + " private key: " + e.getMessage(), e);
         }
     }
@@ -257,7 +278,7 @@ public class JwsService {
             byte[] keyBytes = decodePem(pem);
             X509EncodedKeySpec spec = new X509EncodedKeySpec(keyBytes);
             return KeyFactory.getInstance(algorithm).generatePublic(spec);
-        } catch (Exception e) {
+        } catch (GeneralSecurityException | IllegalArgumentException e) {
             throw new JwsOperationException("Failed to parse " + algorithm + " public key: " + e.getMessage(), e);
         }
     }
@@ -292,7 +313,7 @@ public class JwsService {
             String publicPem  = toPem("PUBLIC KEY",  rsaKey.toRSAPublicKey().getEncoded());
 
             return new KeyGenerateResponse("RSA", keySize, privatePem, publicPem);
-        } catch (Exception e) {
+        } catch (JOSEException e) {
             throw new JwsOperationException("Failed to generate RSA key pair: " + e.getMessage(), e);
         }
     }
@@ -314,13 +335,17 @@ public class JwsService {
             String publicPem  = toPem("PUBLIC KEY",  ecKey.toECPublicKey().getEncoded());
 
             return new KeyGenerateResponse("EC", curveSize, privatePem, publicPem);
-        } catch (Exception e) {
+        } catch (JOSEException e) {
             throw new JwsOperationException("Failed to generate EC key pair: " + e.getMessage(), e);
         }
     }
 
     private String toPem(String label, byte[] encoded) {
         String base64 = Base64.getMimeEncoder(64, new byte[]{'\n'}).encodeToString(encoded);
-        return "-----BEGIN " + label + "-----\n" + base64 + "\n-----END " + label + "-----\n";
+        return """
+                -----BEGIN %s-----
+                %s
+                -----END %s-----
+                """.formatted(label, base64, label);
     }
 }
